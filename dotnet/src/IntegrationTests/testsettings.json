@@ -67,6 +67,10 @@
       "VisionModelId": "gemini-1.5-flash"
     }
   },
+  "Anthropic": {
+    "ModelId": "claude-3-5-sonnet-20241022",
+    "ApiKey": ""
+  },
   "VertexAI": {
     "EmbeddingModelId": "textembedding-gecko@003",
     "BearerKey": "",
