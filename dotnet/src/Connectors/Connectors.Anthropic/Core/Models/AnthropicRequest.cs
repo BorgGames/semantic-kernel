@@ -3,6 +3,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Text;
@@ -11,9 +13,6 @@ namespace Microsoft.SemanticKernel.Connectors.Anthropic.Core;
 
 internal sealed class AnthropicRequest
 {
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Version { get; set; }
-
     /// <summary>
     /// Input messages.<br/>
     /// Our models are trained to operate on alternating user and assistant conversational turns.
@@ -62,6 +61,10 @@ internal sealed class AnthropicRequest
     [JsonPropertyName("temperature")]
     public double? Temperature { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("tools")]
+    public IList<AnthropicTool>? Tools { get; set; }
+
     /// <summary>
     /// In nucleus sampling, we compute the cumulative distribution over all the options for each subsequent token
     /// in decreasing probability order and cut it off once it reaches a particular probability specified by top_p.
@@ -90,6 +93,12 @@ internal sealed class AnthropicRequest
         this.Messages.Add(CreateAnthropicMessageFromChatMessage(message));
     }
 
+    internal void AddTool(AnthropicTool tool)
+    {
+        this.Tools ??= [];
+        this.Tools.Add(tool);
+    }
+
     /// <summary>
     /// Creates a <see cref="AnthropicRequest"/> object from the given <see cref="ChatHistory"/> and <see cref="AnthropicPromptExecutionSettings"/>.
     /// </summary>
@@ -114,7 +123,7 @@ internal sealed class AnthropicRequest
     {
         return new Message
         {
-            Role = message.Role,
+            Role = AuthorRole.Tool.Equals(message.Role) ? AuthorRole.User : message.Role,
             Contents = CreateAnthropicMessages(message)
         };
     }
@@ -148,8 +157,33 @@ internal sealed class AnthropicRequest
     {
         TextContent textContent => new AnthropicContent("text") { Text = textContent.Text ?? string.Empty },
         ImageContent imageContent => CreateAnthropicImageContent(imageContent),
+        FunctionCallContent functionCallContent => CreateAnthropicFunctionCallContent(functionCallContent),
+        FunctionResultContent functionResultContent => CreateAnthropicFunctionResultContent(functionResultContent),
         _ => throw new NotSupportedException($"Content type '{content.GetType().Name}' is not supported.")
     };
+
+    private static AnthropicContent CreateAnthropicFunctionCallContent(FunctionCallContent functionCallContent)
+    {
+        return new("tool_use")
+        {
+            ID = functionCallContent.Id,
+            Name = functionCallContent.FunctionName,
+            Input = (JsonObject?)JsonSerializer.SerializeToNode(functionCallContent.Arguments),
+        };
+    }
+
+    private static AnthropicContent CreateAnthropicFunctionResultContent(FunctionResultContent functionResultContent)
+    {
+        return new("tool_result")
+        {
+            ToolUseID = functionResultContent.CallId,
+            Content = functionResultContent.Result switch
+            {
+                string text => text,
+                _ => throw new NotSupportedException("Only text results are supported."),
+            },
+        };
+    }
 
     private static AnthropicContent CreateAnthropicImageContent(ImageContent imageContent)
     {

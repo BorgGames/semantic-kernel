@@ -11,6 +11,8 @@ public sealed class AnthropicClientOptions : ClientOptions
 {
     internal const ServiceVersion LatestVersion = ServiceVersion.V2023_06_01;
 
+    internal string? Beta { get; init; }
+
     /// <summary> The version of the service to use. </summary>
     public enum ServiceVersion
     {
@@ -29,12 +31,15 @@ public sealed class AnthropicClientOptions : ClientOptions
     /// Default value is <see cref="AnthropicClientOptions.LatestVersion"/>.<br/>
     /// </param>
     /// <exception cref="NotSupportedException">Provided version is not supported.</exception>
-    public AnthropicClientOptions(ServiceVersion version = LatestVersion) : base(version switch
+    public AnthropicClientOptions(ServiceVersion version = LatestVersion, string? beta = null) : base(ToString(version))
+    {
+        this.Beta = beta;
+    }
+
+    private static string ToString(ServiceVersion version) => version switch
     {
         ServiceVersion.V2023_01_01 => "2023-01-01",
         ServiceVersion.V2023_06_01 => "2023-06-01",
         _ => throw new NotSupportedException("Unsupported service version")
-    })
-    {
-    }
+    };
 }

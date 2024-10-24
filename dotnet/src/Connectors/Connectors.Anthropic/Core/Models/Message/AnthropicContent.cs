@@ -1,11 +1,35 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Microsoft.SemanticKernel.Connectors.Anthropic.Core;
 
 internal sealed class AnthropicContent
 {
+    /// <summary>
+    /// Used to return tool call results.
+    /// </summary>
+    [JsonPropertyName("content")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Content { get; set; }
+
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ID { get; set; }
+
+    [JsonPropertyName("name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("input")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonObject? Input { get; set; }
+
+    [JsonPropertyName("tool_use_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolUseID { get; set; }
+
     /// <summary>
     /// Currently supported only base64.
     /// </summary>

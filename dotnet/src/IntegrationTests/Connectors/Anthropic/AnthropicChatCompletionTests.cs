@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Anthropic;
+using Microsoft.SemanticKernel.Connectors.Anthropic.Core;
 using xRetry;
 using Xunit;
 using Xunit.Abstractions;
@@ -258,6 +259,82 @@ public sealed class AnthropicChatCompletionTests(ITestOutputHelper output) : Tes
         Assert.NotNull(metadata);
         this.Output.WriteLine($"FinishReason: {metadata.FinishReason}");
         Assert.Equal(AnthropicFinishReason.Stop, metadata.FinishReason);
+    }
+
+    [Fact(Skip = "This test is for manual verification.")]
+    public async Task ChatGenerationComputerUseAsync()
+    {
+        // Arrange
+        var chatHistory = new ChatHistory();
+        chatHistory.AddUserMessage("Open Notepad and type Hi!");
+
+        var sut = new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new(beta: ComputerUse_2024_10_22.Beta));
+
+        var kernel = new Kernel();
+        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(NoOpComputer.Instance));
+
+        // Act
+        var response = await sut.GetChatMessageContentsAsync(chatHistory, kernel: kernel);
+
+        // Assert
+        var lastMessage = response[^1];
+        var metadata = lastMessage.Metadata as AnthropicMetadata;
+        Assert.NotNull(metadata);
+        this.Output.WriteLine($"FinishReason: {metadata.FinishReason}");
+        Assert.Equal(AnthropicFinishReason.ToolUse, metadata.FinishReason);
+
+        var supposedlyScreenshotCall = lastMessage.Items
+            .OfType<FunctionCallContent>()
+            .FirstOrDefault();
+        Assert.NotNull(supposedlyScreenshotCall);
+        Assert.Equal("computer", supposedlyScreenshotCall.FunctionName);
+        if (supposedlyScreenshotCall.Arguments?["action"] is not JsonElement action)
+        {
+            Assert.Fail("action is not supplied or wrong type");
+            return;
+        }
+        Assert.Equal("screenshot", action.Deserialize<string>());
+    }
+
+    [RetryFact(Skip = "This test is for manual verification.")]
+    public async Task ChatGenerationComputerUseUnderstandsResult()
+    {
+        // Arrange
+        var chatHistory = new ChatHistory
+        {
+            new(AuthorRole.Assistant, content: null)
+            {
+                Items = {
+                    new FunctionCallContent("computer", id: "1", arguments: new KernelArguments()
+                    {
+                        ["action"] = "cursor_position",
+                    }),
+                },
+            },
+            new(AuthorRole.User, content: null)
+            {
+                Items =
+                {
+                    new FunctionResultContent("computer", callId: "1", result: "x=120,y=121"),
+                },
+            },
+        };
+        chatHistory.AddUserMessage("Now that you got the coordinates, tell me x+y as a single number, e.g. '1234'");
+
+        var sut = new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new(beta: ComputerUse_2024_10_22.Beta));
+
+        var kernel = new Kernel();
+        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(NoOpComputer.Instance));
+
+        // Act
+        var response = await sut.GetChatMessageContentAsync(chatHistory, kernel: kernel);
+
+        // Assert
+        var metadata = response.Metadata as AnthropicMetadata;
+        Assert.NotNull(metadata);
+        this.Output.WriteLine($"FinishReason: {metadata.FinishReason}");
+        Assert.Equal(AnthropicFinishReason.Stop, metadata.FinishReason);
+        Assert.True(response.Content?.EndsWith("241", StringComparison.InvariantCulture));
     }
 
     [RetryTheory]

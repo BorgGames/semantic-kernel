@@ -20,7 +20,7 @@ public abstract class TestBase(ITestOutputHelper output)
 
     protected ITestOutputHelper Output { get; } = output;
 
-    protected IChatCompletionService GetChatService(ServiceType serviceType) => serviceType switch
+    protected IChatCompletionService GetChatService(ServiceType serviceType, ClientOptions? clientOptions = null) => serviceType switch
     {
         ServiceType.Anthropic => new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new()),
         ServiceType.VertexAI => new AnthropicChatCompletionService(this.VertexAIGetModel(), this.VertexAIGetBearerKey(), new VertexAIAnthropicClientOptions(), this.VertexAIGetEndpoint()),
@@ -35,8 +35,8 @@ public abstract class TestBase(ITestOutputHelper output)
         AmazonBedrock
     }
 
-    private string AnthropicGetModel() => this._configuration.GetSection("Anthropic:ModelId").Get<string>()!;
-    private string AnthropicGetApiKey() => this._configuration.GetSection("Anthropic:ApiKey").Get<string>()!;
+    protected string AnthropicGetModel() => this._configuration.GetSection("Anthropic:ModelId").Get<string>()!;
+    protected string AnthropicGetApiKey() => this._configuration.GetSection("Anthropic:ApiKey").Get<string>()!;
     private string VertexAIGetModel() => this._configuration.GetSection("VertexAI:Anthropic:ModelId").Get<string>()!;
     private Uri VertexAIGetEndpoint() => new(this._configuration.GetSection("VertexAI:Anthropic:Endpoint").Get<string>()!);
     private Func<ValueTask<string>> VertexAIGetBearerKey() => () => ValueTask.FromResult(this._configuration.GetSection("VertexAI:BearerKey").Get<string>()!);

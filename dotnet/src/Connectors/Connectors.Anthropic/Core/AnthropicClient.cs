@@ -35,6 +35,7 @@ internal sealed class AnthropicClient
     private readonly string? _apiKey;
     private readonly Uri _endpoint;
     private readonly string? _version;
+    private readonly string? _beta;
 
     private static readonly string s_namespace = typeof(AnthropicChatCompletionService).Namespace!;
 
@@ -104,6 +105,7 @@ internal sealed class AnthropicClient
         this._logger = logger ?? NullLogger.Instance;
         this._modelId = modelId;
         this._version = options.Version;
+        this._beta = options.Beta;
         this._endpoint = targetUri;
 
         this._attributesInternal.Add(AIServiceExtensions.ModelIdKey, modelId);
@@ -158,7 +160,7 @@ internal sealed class AnthropicClient
         Kernel? kernel = null,
         CancellationToken cancellationToken = default)
     {
-        var state = this.ValidateInputAndCreateChatCompletionState(chatHistory, executionSettings);
+        var state = this.ValidateInputAndCreateChatCompletionState(chatHistory, executionSettings, kernel);
 
         using var activity = ModelDiagnostics.StartCompletionActivity(
             this._endpoint, this._modelId, ModelProvider, chatHistory, state.ExecutionSettings);
@@ -231,19 +233,38 @@ internal sealed class AnthropicClient
 
     private AnthropicChatMessageContent GetChatMessageContentFromAnthropicContent(AnthropicResponse response, AnthropicContent content)
     {
-        if (!string.Equals(content.Type, "text", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(content.Type, "text", StringComparison.OrdinalIgnoreCase))
         {
-            throw new NotSupportedException($"Content type {content.Type} is not supported yet.");
+            return new AnthropicChatMessageContent
+            {
+                Role = response.Role,
+                Items = [new TextContent(content.Text ?? string.Empty)],
+                ModelId = response.ModelId ?? this._modelId,
+                InnerContent = response,
+                Metadata = GetResponseMetadata(response),
+            };
         }
 
-        return new AnthropicChatMessageContent
+        if (string.Equals(content.Type, "tool_use", StringComparison.OrdinalIgnoreCase))
         {
-            Role = response.Role,
-            Items = [new TextContent(content.Text ?? string.Empty)],
-            ModelId = response.ModelId ?? this._modelId,
-            InnerContent = response,
-            Metadata = GetResponseMetadata(response)
-        };
+            return new AnthropicChatMessageContent
+            {
+                Role = response.Role,
+                Items = [new FunctionCallContent(
+                    functionName: content.Name,
+                    id: content.ID,
+                    arguments: JsonSerializer.Deserialize<KernelArguments>(content.Input)
+                )
+                {
+                    InnerContent = content,
+                }],
+                ModelId = response.ModelId ?? this._modelId,
+                InnerContent = response,
+                Metadata = GetResponseMetadata(response),
+            };
+        }
+
+        throw new NotSupportedException($"Content type {content.Type} is not supported yet.");
     }
 
     private static AnthropicMetadata GetResponseMetadata(AnthropicResponse response)
@@ -269,7 +290,8 @@ internal sealed class AnthropicClient
 
     private ChatCompletionState ValidateInputAndCreateChatCompletionState(
         ChatHistory chatHistory,
-        PromptExecutionSettings? executionSettings)
+        PromptExecutionSettings? executionSettings,
+        Kernel? kernel)
     {
         ValidateChatHistory(chatHistory);
 
@@ -283,7 +305,8 @@ internal sealed class AnthropicClient
 
         var filteredChatHistory = new ChatHistory(chatHistory.Where(IsAssistantOrUserOrSystem));
         var anthropicRequest = AnthropicRequest.FromChatHistoryAndExecutionSettings(filteredChatHistory, anthropicExecutionSettings);
-        anthropicRequest.Version = this._version;
+
+        AnthropicToolCallBehavior.ConfigureRequest(kernel, anthropicRequest);
 
         return new ChatCompletionState
         {
@@ -386,6 +409,11 @@ internal sealed class AnthropicClient
         if (!httpRequestMessage.Headers.Contains("anthropic-version"))
         {
             httpRequestMessage.Headers.Add("anthropic-version", this._version);
+        }
+
+        if (!httpRequestMessage.Headers.Contains("anthropic-beta") && this._beta is not null)
+        {
+            httpRequestMessage.Headers.Add("anthropic-beta", this._beta);
         }
 
         if (this._apiKey is not null && !httpRequestMessage.Headers.Contains("x-api-key"))
