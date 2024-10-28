@@ -7,8 +7,6 @@ namespace SemanticKernel.IntegrationTests.Connectors.Anthropic;
 
 internal class NoOpComputer : ComputerUse_2024_10_22.IComputer
 {
-    public static NoOpComputer Instance { get; } = new();
-
     public int DisplayWidth => 1024;
 
     public int DisplayHeight => 768;

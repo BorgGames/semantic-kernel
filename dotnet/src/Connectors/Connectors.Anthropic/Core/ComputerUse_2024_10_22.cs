@@ -51,7 +51,7 @@ public static class ComputerUse_2024_10_22
         Task<(int, int)> GetCursorPosition();
     }
 
-    private delegate Task<string?> ComputerDelegate(Action action, string? text, (int, int)? coord);
+    private delegate Task<string?> ComputerDelegate(Action action, string? text = null, (int, int)? coord = null);
 
     private static KernelPlugin Computer(ComputerDelegate computer, int width, int height)
     {
@@ -73,7 +73,7 @@ public static class ComputerUse_2024_10_22
 
     private static ComputerDelegate Wrap(IComputer computer)
     {
-        return async (action, text, coord) =>
+        return async (Action action, string? text = null, (int, int)? coord = null) =>
         {
             switch (action)
             {

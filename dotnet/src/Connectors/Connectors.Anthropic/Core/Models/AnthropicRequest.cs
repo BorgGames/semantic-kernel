@@ -150,7 +150,10 @@ internal sealed class AnthropicRequest
 
     private static List<AnthropicContent> CreateAnthropicMessages(ChatMessageContent content)
     {
-        return content.Items.Select(GetAnthropicMessageFromKernelContent).ToList();
+        return content.Items
+            .Select(GetAnthropicMessageFromKernelContent)
+            .OrderBy(m => m.Type switch { "tool_result" => 0, _ => 1 })
+            .ToList();
     }
 
     private static AnthropicContent GetAnthropicMessageFromKernelContent(KernelContent content) => content switch

@@ -9,11 +9,13 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.FunctionCalling;
 using Microsoft.SemanticKernel.Diagnostics;
 using Microsoft.SemanticKernel.Http;
 using Microsoft.SemanticKernel.Services;
@@ -73,6 +75,8 @@ internal sealed class AnthropicClient
 
     internal IReadOnlyDictionary<string, object?> Attributes => this._attributesInternal;
 
+    private readonly FunctionCallsProcessor _functionCalls;
+
     /// <summary>
     /// Represents a client for interacting with the Anthropic chat completion models.
     /// </summary>
@@ -107,6 +111,7 @@ internal sealed class AnthropicClient
         this._version = options.Version;
         this._beta = options.Beta;
         this._endpoint = targetUri;
+        this._functionCalls = new(logger);
 
         this._attributesInternal.Add(AIServiceExtensions.ModelIdKey, modelId);
     }
@@ -162,8 +167,49 @@ internal sealed class AnthropicClient
     {
         var state = this.ValidateInputAndCreateChatCompletionState(chatHistory, executionSettings, kernel);
 
+        for (int requestIndex = 0; ; requestIndex++)
+        {
+            var stepMessages = await this.GenerateChatMessageStepAsync(state, kernel, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (state.ExecutionSettings?.FunctionChoiceBehavior is null
+             || !stepMessages.SelectMany(m => m.Items).OfType<FunctionCallContent>().Any())
+            {
+                return stepMessages;
+            }
+
+            var functionConfing = state.ExecutionSettings.FunctionChoiceBehavior.GetConfiguration(
+                new(state.ChatHistory)
+                {
+                    Kernel = kernel,
+                    RequestSequenceIndex = requestIndex,
+                });
+
+            var lastMessage = await this._functionCalls.ProcessFunctionCallsAsync(
+                stepMessages[stepMessages.Count - 1],
+                state.ChatHistory,
+                requestIndex,
+                checkIfFunctionAdvertised: _ => true,
+                functionConfing.Options ?? new FunctionChoiceBehaviorOptions(),
+                kernel,
+                cancellationToken).ConfigureAwait(false);
+
+            if (lastMessage != null)
+            {
+                return [lastMessage];
+            }
+
+            state = this.ValidateInputAndCreateChatCompletionState(state.ChatHistory, state.ExecutionSettings, kernel);
+        }
+    }
+
+    private async Task<IReadOnlyList<ChatMessageContent>> GenerateChatMessageStepAsync(
+        ChatCompletionState state,
+        Kernel? kernel = null,
+        CancellationToken cancellationToken = default)
+    {
         using var activity = ModelDiagnostics.StartCompletionActivity(
-            this._endpoint, this._modelId, ModelProvider, chatHistory, state.ExecutionSettings);
+            this._endpoint, this._modelId, ModelProvider, state.ChatHistory, state.ExecutionSettings);
 
         List<AnthropicChatMessageContent> chatResponses;
         AnthropicResponse anthropicResponse;
@@ -253,7 +299,7 @@ internal sealed class AnthropicClient
                 Items = [new FunctionCallContent(
                     functionName: content.Name,
                     id: content.ID,
-                    arguments: JsonSerializer.Deserialize<KernelArguments>(content.Input)
+                    arguments: DeserializeKernelArguments(content.Input)
                 )
                 {
                     InnerContent = content,
@@ -265,6 +311,18 @@ internal sealed class AnthropicClient
         }
 
         throw new NotSupportedException($"Content type {content.Type} is not supported yet.");
+    }
+
+    private static KernelArguments DeserializeKernelArguments(JsonObject? arguments)
+    {
+        KernelArguments result = [];
+
+        foreach (var argumentKvp in arguments?.Deserialize<Dictionary<string, object>>() ?? [])
+        {
+            result[argumentKvp.Key] = argumentKvp.Value.ToString();
+        }
+
+        return result;
     }
 
     private static AnthropicMetadata GetResponseMetadata(AnthropicResponse response)
@@ -303,7 +361,11 @@ internal sealed class AnthropicClient
             JsonSerializer.Serialize(chatHistory),
             JsonSerializer.Serialize(anthropicExecutionSettings));
 
-        var filteredChatHistory = new ChatHistory(chatHistory.Where(IsAssistantOrUserOrSystem));
+        if (chatHistory.FirstOrDefault(m => !IsSupportedRole(m.Role)) is { } unsupportedRole)
+        {
+            throw new NotSupportedException($"Role {unsupportedRole.Role} is not supported");
+        }
+        var filteredChatHistory = new ChatHistory(chatHistory);
         var anthropicRequest = AnthropicRequest.FromChatHistoryAndExecutionSettings(filteredChatHistory, anthropicExecutionSettings);
 
         AnthropicToolCallBehavior.ConfigureRequest(kernel, anthropicRequest);
@@ -315,8 +377,9 @@ internal sealed class AnthropicClient
             AnthropicRequest = anthropicRequest
         };
 
-        static bool IsAssistantOrUserOrSystem(ChatMessageContent msg)
-            => msg.Role == AuthorRole.Assistant || msg.Role == AuthorRole.User || msg.Role == AuthorRole.System;
+        static bool IsSupportedRole(AuthorRole role)
+            => role == AuthorRole.Assistant || role == AuthorRole.User
+            || role == AuthorRole.System || role == AuthorRole.Tool;
     }
 
     /// <summary>

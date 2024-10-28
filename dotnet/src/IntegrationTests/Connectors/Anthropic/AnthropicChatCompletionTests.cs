@@ -271,7 +271,7 @@ public sealed class AnthropicChatCompletionTests(ITestOutputHelper output) : Tes
         var sut = new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new(beta: ComputerUse_2024_10_22.Beta));
 
         var kernel = new Kernel();
-        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(NoOpComputer.Instance));
+        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(new NoOpComputer()));
 
         // Act
         var response = await sut.GetChatMessageContentsAsync(chatHistory, kernel: kernel);
@@ -324,10 +324,41 @@ public sealed class AnthropicChatCompletionTests(ITestOutputHelper output) : Tes
         var sut = new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new(beta: ComputerUse_2024_10_22.Beta));
 
         var kernel = new Kernel();
-        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(NoOpComputer.Instance));
+        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(new NoOpComputer()));
 
         // Act
         var response = await sut.GetChatMessageContentAsync(chatHistory, kernel: kernel);
+
+        // Assert
+        var metadata = response.Metadata as AnthropicMetadata;
+        Assert.NotNull(metadata);
+        this.Output.WriteLine($"FinishReason: {metadata.FinishReason}");
+        Assert.Equal(AnthropicFinishReason.Stop, metadata.FinishReason);
+        Assert.True(response.Content?.EndsWith("241", StringComparison.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task ChatGenerationComputerUseAutoCallAsync()
+    {
+        // Arrange
+        var chatHistory = new ChatHistory();
+        chatHistory.AddUserMessage("Get mouse coordinates, and tell me x+y as a single number, e.g. '1234'");
+
+        var sut = new AnthropicChatCompletionService(this.AnthropicGetModel(), this.AnthropicGetApiKey(), new(beta: ComputerUse_2024_10_22.Beta));
+
+        var kernel = new Kernel();
+        kernel.Plugins.Add(ComputerUse_2024_10_22.ComputerPlugin(new NoOpComputer()
+        {
+            CursorPosition = (120, 121),
+        }));
+
+        // Act
+        var response = await sut.GetChatMessageContentAsync(chatHistory, kernel: kernel,
+                                                            executionSettings: new AnthropicPromptExecutionSettings()
+                                                            {
+                                                                MaxTokens = AnthropicPromptExecutionSettings.DefaultTextMaxTokens,
+                                                                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
+                                                            });
 
         // Assert
         var metadata = response.Metadata as AnthropicMetadata;
