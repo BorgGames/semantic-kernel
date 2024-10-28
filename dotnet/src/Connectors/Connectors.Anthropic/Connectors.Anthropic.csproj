@@ -15,12 +15,17 @@
   <Import Project="$(RepoRoot)/dotnet/nuget/nuget-package.props" />
   <Import Project="$(RepoRoot)/dotnet/src/InternalUtilities/src/InternalUtilities.props" />
   <Import Project="$(RepoRoot)/dotnet/src/InternalUtilities/connectors/AI/FunctionCalling/FunctionCallingUtilities.props" />
-
+  
   <PropertyGroup>
     <!-- NuGet Package Settings -->
     <Title>Semantic Kernel - Anthropic Connectors</Title>
     <Description>Semantic Kernel connectors for Anthropic generation platforms. Contains generation services.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Link="README.md" Pack="true" PackagePath="." />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\SemanticKernel.Abstractions\SemanticKernel.Abstractions.csproj" />
