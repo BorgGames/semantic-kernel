@@ -5,7 +5,7 @@
     <AssemblyName>Microsoft.SemanticKernel.Connectors.Anthropic</AssemblyName>
     <RootNamespace>$(AssemblyName)</RootNamespace>
     <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
-    <VersionSuffix>alpha0</VersionSuffix>
+    <VersionSuffix>alpha2</VersionSuffix>
     <NoWarn>CA1707,SKEXP0001,SKEXP0070</NoWarn>
     <PackageId Condition="'$(AnthropicPackageId)'!=''">$(AnthropicPackageId)</PackageId>
     <DebugType>embedded</DebugType>
