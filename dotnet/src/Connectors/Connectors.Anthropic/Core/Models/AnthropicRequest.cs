@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.Anthropic.Core.Models.Message;
 using Microsoft.SemanticKernel.Text;
 
 namespace Microsoft.SemanticKernel.Connectors.Anthropic.Core;
@@ -150,10 +151,13 @@ internal sealed class AnthropicRequest
 
     private static List<AnthropicContent> CreateAnthropicMessages(ChatMessageContent content)
     {
-        return content.Items
+        var result = content.Items
             .Select(GetAnthropicMessageFromKernelContent)
-            .OrderBy(m => m.Type switch { "tool_result" => 0, _ => 1 })
+            .OrderBy(m => m.Type switch { AnthropicContentType.ToolResult => 0, _ => 1 })
             .ToList();
+        var toolResults = new HashSet<string>(result.Where(c => c.Type == AnthropicContentType.ToolResult).Select(c => c.Content!));
+        result.RemoveAll(c => c.Type != AnthropicContentType.ToolResult && toolResults.Contains(c.Text!));
+        return result;
     }
 
     private static AnthropicContent GetAnthropicMessageFromKernelContent(KernelContent content) => content switch
@@ -177,7 +181,7 @@ internal sealed class AnthropicRequest
 
     private static AnthropicContent CreateAnthropicFunctionResultContent(FunctionResultContent functionResultContent)
     {
-        return new("tool_result")
+        return new(AnthropicContentType.ToolResult)
         {
             ToolUseID = functionResultContent.CallId,
             Content = functionResultContent.Result switch
